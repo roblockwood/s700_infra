@@ -220,7 +220,23 @@ properties = {
     group      : "multiAxis",
     type       : "boolean",
     value      : false,
-    scope      : "machine"
+    scope      : "post"
+  },
+  measureTools: {
+    title      : "Optionally measure tools at start",
+    description: "Measure each tool used at the beginning of the program when block delete is turned off.",
+    group      : "probing",
+    type       : "boolean",
+    value      : false,
+    scope      : "post"
+  },
+  confirmToolLengths: {
+    title      : "Confirm tool lengths",
+    description: "Ensure that the actual tool lengths are equal or longer to that specified in CAM.",
+    group      : "probing",
+    type       : "boolean",
+    value      : false,
+    scope      : "post"
   },
   singleResultsFile: {
     title      : "Create single results file",
@@ -1492,6 +1508,107 @@ function getProbingArguments(cycle, updateWCS) {
       conditional(outputWCSCode, "W" + probeWCSFormat.format(probeOutputWorkOffset > 6 ? -1 * (probeOutputWorkOffset - 6) : (probeOutputWorkOffset + 53)))
     ];
   }
+}
+
+function writeMeasureTools() {
+  // Save showSequenceNumbers setting and then disable it
+  var show = getProperty("showSequenceNumbers");
+  setProperty("showSequenceNumbers", "false");
+
+  // optionally measure tools
+  if (getProperty("measureTools")) {
+    var tools = getToolTable();
+    optionalSection = true;
+    if (tools.getNumberOfTools() > 0) {
+
+      writeBlock(mFormat.format(0), formatComment(localize("Read note"))); // wait for operator
+      writeComment(localize("With B SKIP turned off each tool be automatically measured"));
+      writeComment(localize("Once the tools are verified turn B SKIP on to skip verification"));
+      for (var i = 0; i < tools.getNumberOfTools(); ++i) {
+        var tool = tools.getTool(i);
+        if (getProperty("measureTools") && (tool.type == TOOL_PROBE)) {
+          continue;
+        }
+        var comment = "T" + toolFormat.format(tool.number) + " " +
+          "D=" + xyzFormat.format(tool.diameter) + " " +
+          localize("CR") + "=" + xyzFormat.format(tool.cornerRadius);
+        if ((tool.taperAngle > 0) && (tool.taperAngle < Math.PI)) {
+          comment += " " + localize("TAPER") + "=" + taperFormat.format(tool.taperAngle) + localize("deg");
+        }
+        comment += " - " + getToolTypeName(tool.type);
+        writeComment(comment);
+        writeToolMeasureBlock(tool, true);
+      }
+
+      // Reload initial tool (side effect to cancel tool length offset)
+      writeComment("Reload initial tool")
+      writeBlock("T" + toolFormat.format(getSection(0).getTool().number), mFormat.format(6)); // get tool
+    }
+    optionalSection = false;
+    writeln("");
+  }
+
+  // optionally confirm tool lengths
+  if (getProperty("confirmToolLengths")) {
+    var toolLenBase = 11000;
+    var tools = getToolTable();
+    optionalSection = true;
+    if (tools.getNumberOfTools() > 0) {
+
+      for (var i = 0; i < tools.getNumberOfTools(); ++i) {
+        var tool = tools.getTool(i);
+        if (tool.type == TOOL_PROBE) {
+          continue;
+        }
+
+        // Compare tool table len with CAM len and stop if shorter
+        var camLen = xyzFormat.format(tool.bodyLength + tool.holderLength);
+        var tooltableLen = "#" + (toolLenBase + tool.number);
+        var seq = sequenceNumber;
+        sequenceNumber += getProperty("sequenceNumberIncrement");
+        writeComment("Checking lengths of tool: " + tool.number);
+        writeBlock("N" + seq + " IF [" + tooltableLen + " GE " + camLen + "] GOTO " + sequenceNumber);
+        writeBlock("#3006=(TOOL " + tool.number + " TOO SHORT)")
+      }
+      writeBlock("N" + sequenceNumber)
+      sequenceNumber += getProperty("sequenceNumberIncrement");
+    }
+    optionalSection = false;
+    writeln("");
+  }
+  // Restore setting
+  setProperty("showSequenceNumbers", show);
+}
+
+function writeToolMeasureBlock(tool, preMeasure) {
+  var comment = measureTool ? formatComment("MEASURE TOOL") : "";
+  if (!preMeasure) {
+    prepareForToolCheck();
+  }
+  if (getProperty("probingType") == "Renishaw") {
+    // Renishaw untested
+    writeBlock(
+      gFormat.format(65),
+      "P9921",
+      "M" + 22 + ".",
+      "T" + toolFormat.format(tool.number),
+      "D" + xyzFormat.format(tool.diameter) + ".",
+      comment
+    );
+  } else { // Blum
+    writeBlock("T" + toolFormat.format(tool.number), mFormat.format(6)); // get tool
+    writeBlock(mFormat.format(19)); // orientate spindle
+    writeBlock(
+      gFormat.format(65),
+      "P8915",
+      "B0.",
+      "H" + toolFormat.format(tool.number),
+      // Offset facemills (type 9) by tool radius
+      conditional(tool.type == 9, "R" + xyzFormat.format(tool.diameter / 2)),
+      comment
+    ); // probe tool
+  }
+  measureTool = false;
 }
 
 function onCycleEnd() {
