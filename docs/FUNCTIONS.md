@@ -2832,14 +2832,14 @@ function validateCommonParameters() {
 
 ## writeBlock
 
-**Location**: `brother speedio.cps:2807`
+**Location**: `brother speedio.cps:2810`
 
 **Signature**:
 ```javascript
 function writeBlock()
 ```
 
-**Description**: Writes a G-code block with optional sequence numbers and optional block prefix (/). Handles sequence number settings (always, never, tool change only).
+**Description**: Writes a G-code block with optional sequence numbers and optional block prefix (/). Handles sequence number settings (always, never, tool change only). Uses a line-based increment system where the sequence number only increments every 42 lines of output.
 
 **Parameters**:
 - `...arguments` (any) - Variable arguments to format into block
@@ -2848,6 +2848,12 @@ function writeBlock()
 
 **G-Code Impact**: Outputs formatted G-code block with optional N... sequence number
 
+**Sequence Number Logic**:
+- Maintains `lineCounter` to track lines since last sequence number increment
+- Increments `lineCounter` on each `writeBlock()` call when sequence numbers are enabled
+- Only increments `sequenceNumber` when `lineCounter >= linesPerSequenceIncrement` (42 lines)
+- Example: Lines 1-42 use N10, lines 43-84 use N15, lines 85-126 use N20, etc.
+
 **Called By**:
 - Nearly every function that outputs G-code
 
@@ -2855,8 +2861,28 @@ function writeBlock()
 ```javascript
 // Throughout code
 writeBlock(gMotionModal.format(0), xOutput.format(x), yOutput.format(y));
-// Outputs: N10 G0 X50.0 Y100.0
-// or just: G0 X50.0 Y100.0
+// Line 1-42: N10 G0 X50.0 Y100.0
+// Line 43-84: N15 G0 X60.0 Y110.0
+// Line 85-126: N20 G0 X70.0 Y120.0
+
+// Actual implementation (Lines 2817-2839):
+if (getProperty("showSequenceNumbers") == "true") {
+  if (sequenceNumber == undefined || sequenceNumber >= settings.maximumSequenceNumber) {
+    sequenceNumber = getProperty("sequenceNumberStart");
+    lineCounter = 0;
+  }
+
+  lineCounter++;  // Increment line counter
+
+  // Output block with current sequence number
+  writeWords2("N" + sequenceNumber, arguments);
+
+  // Only increment sequence number every 42 lines
+  if (lineCounter >= linesPerSequenceIncrement) {
+    sequenceNumber += getProperty("sequenceNumberIncrement");
+    lineCounter = 0;
+  }
+}
 ```
 
 **Related Functions**:

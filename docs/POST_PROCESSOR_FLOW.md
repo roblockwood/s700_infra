@@ -742,4 +742,5 @@ This state prevents unnecessary Z retractions and ensures safe rotary axis movem
 
 | Date | Version | Description |
 |------|---------|-------------|
+| 2025-11-17 | 1.1 | Added sequence number management documentation (line-based increment every 42 lines) |
 | 2025-11-17 | 1.0 | Initial documentation generated |
