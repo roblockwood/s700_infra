@@ -1,0 +1,30 @@
+flowchart TD
+    Start([setSmoothing mode]) --> CheckActive{mode == isActive<br/>AND not different<br/>AND not forced?}
+
+    CheckActive -->|Yes| ReturnEarly[Early return<br/>No change needed]
+    CheckActive -->|No| CheckCompensation{Length compensation<br/>check enabled?}
+
+    CheckCompensation -->|Yes| ValidateComp{Length compensation<br/>active?}
+    CheckCompensation -->|No| CheckMode
+
+    ValidateComp -->|Yes| Error[ERROR: Cannot change<br/>smoothing while length<br/>compensation is active]
+    ValidateComp -->|No| CheckMode{Smoothing<br/>mode?}
+
+    CheckMode -->|Mode A| OutputModeA[Output M-code:<br/>Enable: M260-M265<br/>Disable: M269]
+    CheckMode -->|Mode B| OutputModeB[Output M-code:<br/>Enable: M280-M285<br/>Disable: M289]
+    CheckMode -->|Mode M298| OutputM298[Output M-code:<br/>Enable: M298 L level<br/>Disable: M298 L0]
+
+    OutputModeA --> UpdateState[Update state:<br/>isActive = mode<br/>force = false<br/>isDifferent = false]
+    OutputModeB --> UpdateState
+    OutputM298 --> UpdateState
+
+    UpdateState --> End([Return])
+    ReturnEarly --> End
+    Error --> Halt[Halt post processing]
+
+    style Start fill:#e1f5ff
+    style End fill:#e1f5ff
+    style Error fill:#ffebee
+    style Halt fill:#ffebee
+    style CheckActive fill:#fff4e6
+    style CheckMode fill:#fff4e6
